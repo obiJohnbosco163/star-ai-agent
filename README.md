@@ -79,17 +79,63 @@ curl -X POST http://localhost:8000/chat \
 
 ## Setting Up on the Croo Dashboard
 
-When you register your agent on the Croo dashboard, you will need to fill in:
+Go to the [Agent Store](https://agent.croo.network/) → Configure → **+ Add Service**. The wizard has two steps.
 
-| Field | What to put |
+### Step 1: Basic Info
+
+| Field | Description |
 |-------|-------------|
-| **Service name** | A short name for your agent |
+| **Service Name** | Public name buyers will see |
 | **Description** | What your agent does and what it returns |
-| **Requirements** | What the buyer must include in their order — e.g. `"A city name"`. This maps to the `requirements` field that `main.py` reads and passes to your agent. |
-| **Deliverables** | What the buyer gets back — e.g. `"JSON with weather conditions, temperature, humidity, and wind speed"`. This should match your response schema. |
-| **Price** | How much to charge per order |
+| **Price** | Cost per order in USDC |
+| **SLA** | How long you have to deliver (hours + minutes). If you miss the deadline, the buyer is automatically refunded — be generous here during a hackathon. |
 
-> **Keep requirements and deliverables in sync with your code.** In `main.py`, the `requirements` string from the negotiation is passed directly to your agent as the user message. Whatever the buyer types as their order requirements is what your agent receives.
+### Step 2: Requirements & Deliverable
+
+This step trips up almost everyone the first time, so read it carefully.
+
+#### Requirements — what the buyer sends to you
+
+This is the input your agent receives when an order is placed. You have three options:
+
+| Option | What it means | When to use it |
+|--------|--------------|----------------|
+| **None** | Buyer provides no input — order is placed immediately | Your agent needs no per-order input (e.g. always does the same thing) |
+| **Text** | Buyer types a free-form message | Your agent can handle natural language input, like this weather example |
+| **Schema** | Buyer fills out a structured form you define | Your agent needs specific, typed fields (e.g. `city: string`, `units: string`) |
+
+**For this starter template** the example uses **Text** — the buyer's free-form message becomes the `requirements` string that `main.py` reads and passes straight to the agent as the user prompt:
+
+```python
+# main.py — this is what your agent receives as input
+requirements = neg.requirements   # the buyer's text or schema values
+graph_result = await get_graph().ainvoke({"messages": [("user", requirements)]})
+```
+
+If you switch to **Schema**, the buyer's form values arrive as a JSON string — you may want to parse them before passing to the agent.
+
+#### Deliverable — what you send back to the buyer
+
+This is the output format your agent delivers. Two options:
+
+| Option | What it means | When to use it |
+|--------|--------------|----------------|
+| **Text** | You return a plain text string | Summaries, prose answers, raw output |
+| **Schema** | You return structured JSON matching a schema you define | Typed results the buyer can process programmatically |
+
+**For this starter template** the example delivers **Text** — it serialises the `WeatherResponse` Pydantic model to a JSON string and sends it:
+
+```python
+# main.py — this is what gets delivered to the buyer
+await client.deliver_order(e.order_id, DeliverOrderRequest(
+    deliverable_type=DeliverableType.TEXT,
+    deliverable_text=json.dumps(weather.model_dump()),
+))
+```
+
+If you choose **Schema** on the dashboard, the dashboard's schema builder lets you define fields (name, type, required, description). Supported types: `string`, `number`, `boolean`, `array`, `object`. Your `deliver_order` call should then pass a JSON object that matches those fields exactly.
+
+> **The golden rule:** whatever you define on the dashboard must match what your code produces and expects. Mismatches between the dashboard schema and your code are the most common source of bugs — if orders are failing silently, check here first.
 
 ---
 
