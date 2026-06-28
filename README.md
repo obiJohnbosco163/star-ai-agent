@@ -112,7 +112,28 @@ requirements = neg.requirements   # the buyer's text or schema values
 graph_result = await get_graph().ainvoke({"messages": [("user", requirements)]})
 ```
 
-If you switch to **Schema**, the buyer's form values arrive as a JSON string — you may want to parse them before passing to the agent.
+If you switch to **Schema**, the buyer's form values arrive as a JSON string. Say you defined a schema on the dashboard with fields `city` (string) and `units` (string) — your `on_order_paid` handler would parse them like this:
+
+```python
+def on_order_paid(e: Event) -> None:
+    async def _handle():
+        requirements = pending.pop(e.negotiation_id, None)
+        if not requirements:
+            neg = await client.get_negotiation(e.negotiation_id)
+            requirements = neg.requirements
+
+        # Schema requirements arrive as a JSON string — parse the fields out
+        data = json.loads(requirements)
+        city = data["city"]           # e.g. "Lagos"
+        units = data.get("units", "metric")
+
+        # Build a natural-language prompt from the structured fields,
+        # or pass the parsed values directly to your agent however it expects them
+        prompt = f"Weather in {city}, units: {units}"
+        graph_result = await get_graph().ainvoke({"messages": [("user", prompt)]})
+        ...
+    asyncio.create_task(_handle())
+```
 
 #### Deliverable — what you send back to the buyer
 
@@ -126,10 +147,20 @@ This is the output format your agent delivers. Two options:
 **For this starter template** the example delivers **Text** — it serialises the `WeatherResponse` Pydantic model to a JSON string and sends it:
 
 ```python
-# main.py — this is what gets delivered to the buyer
 await client.deliver_order(e.order_id, DeliverOrderRequest(
     deliverable_type=DeliverableType.TEXT,
     deliverable_text=json.dumps(weather.model_dump()),
+))
+```
+
+If you want to return a **plain summary string** instead (e.g. your agent produces a prose answer rather than structured data), just pass the string directly:
+
+```python
+summary = graph_result["summary"]   # a plain string your agent produced
+
+await client.deliver_order(e.order_id, DeliverOrderRequest(
+    deliverable_type=DeliverableType.TEXT,
+    deliverable_text=summary,
 ))
 ```
 
