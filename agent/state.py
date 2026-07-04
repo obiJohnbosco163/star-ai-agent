@@ -1,15 +1,19 @@
+from typing import List
+
 from langgraph.graph import MessagesState
 from pydantic import BaseModel
 
 
-class WeatherResponse(BaseModel):
-    location: str
-    condition: str
-    temperature_c: float
-    humidity_pct: int
-    wind_kmh: float
-    summary: str
+class SalesResearchResponse(BaseModel):
+    prospect_name: str
+    company_name: str
+    who_you_are_talking_to: str
+    company_context: str
+    why_now: str
+    suggested_opening: str
+    key_talking_points: List[str]
+    watch_out_for: List[str]
 
 
 class AgentState(MessagesState):
-    weather_response: WeatherResponse | None = None
+    sales_research_response: SalesResearchResponse | None = None

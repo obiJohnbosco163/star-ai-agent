@@ -47,7 +47,7 @@ async def run_croo_listener():
 
     def on_order_paid(e: Event) -> None:
         async def _handle():
-            logger.info(f"Order {e.order_id} paid, running weather agent...")
+            logger.info(f"Order {e.order_id} paid, running sales research agent...")
             try:
                 requirements = pending.pop(e.negotiation_id, None)
                 if not requirements:
@@ -55,11 +55,15 @@ async def run_croo_listener():
                     requirements = neg.requirements
 
                 graph_result = await get_graph().ainvoke({"messages": [("user", requirements)]})
-                weather = graph_result["weather_response"]
+                response_key = "sales_research_response"
+                sales_research = graph_result.get(response_key)
+
+                if sales_research is None:
+                    raise KeyError(f"Expected graph output under key '{response_key}'")
 
                 await client.deliver_order(e.order_id, DeliverOrderRequest(
                     deliverable_type=DeliverableType.TEXT,
-                    deliverable_text=json.dumps(weather.model_dump()),
+                    deliverable_text=json.dumps(sales_research.model_dump()),
                 ))
                 logger.info(f"Order {e.order_id} delivered!")
             except Exception as err:
@@ -103,4 +107,4 @@ def root():
 @app.post("/chat")
 async def chat(req: ChatRequest):
     result = await get_graph().ainvoke({"messages": [("user", req.message)]})
-    return result["weather_response"]
+    return result.get("sales_research_response")
