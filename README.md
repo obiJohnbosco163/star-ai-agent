@@ -90,7 +90,7 @@ Prospect: https://linkedin.com/in/prospect-name
 
 ## Requirements
 
-- Access to the underlying LLM/agent platform, this is deployed and listed on croo.network as an AI Agent.
+- Access to the underlying LLM/agent platform, this is deployed and listed on https://croo.network as an AI Agent.
 - **Web search / browsing tool access** — all three research tools depend on live web lookups
 - No CRM, database, or additional accounts required for the MVP
 
