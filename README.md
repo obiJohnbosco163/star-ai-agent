@@ -144,4 +144,4 @@ MVP complete — prompts finalized for orchestrator and all three tools. Ready f
 
 ## Contact
 
-Email: star.ai.agent163@gmail.com · X-handle: @star_ai_agent
+Email: star.ai.agent163@gmail.com · X-handle: https://x.com/star_ai_agent
