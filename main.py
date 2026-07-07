@@ -246,7 +246,10 @@ def map_sales_research_response_to_precall_report(payload: dict | object):
 @app.post("/api/precall-report")
 def precall_report_route(req: PrecallReportRequest):
     try:
-        output = generate_precall_report.run(req.company, req.prospect)
+        output = generate_precall_report.run({
+            "company_research": req.company,
+            "prospect_research": req.prospect,
+        })
         parsed = parse_precall_report(output)
         return parsed
     except Exception as err:

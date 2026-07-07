@@ -38,6 +38,10 @@ def _invoke_tool(tool_name: str, tool_args: Any) -> str:
         "generate_precall_report": generate_precall_report,
     }
     tool = tool_map[tool_name]
+
+    if hasattr(tool, "run"):
+        return tool.run(tool_args)
+
     if isinstance(tool_args, dict):
         return tool(**tool_args)
     return tool(tool_args)
