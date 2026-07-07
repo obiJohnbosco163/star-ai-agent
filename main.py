@@ -2,9 +2,14 @@ import asyncio
 import json
 import logging
 import os
+import re
 import signal
 from contextlib import asynccontextmanager
+from html import unescape
 from pathlib import Path
+from typing import Any
+
+import httpx
 
 
 def load_env_file() -> None:
@@ -77,14 +82,19 @@ async def run_croo_listener():
 
                 graph_result = await get_graph().ainvoke({"messages": [("user", requirements)]})
                 response_key = "sales_research_response"
-                sales_research = graph_result.get(response_key)
+                sales_research = normalize_sales_research_response(graph_result.get(response_key))
 
                 if sales_research is None:
                     raise KeyError(f"Expected graph output under key '{response_key}'")
 
+                if isinstance(sales_research, dict):
+                    deliver_text = json.dumps(sales_research)
+                else:
+                    deliver_text = str(sales_research)
+
                 await client.deliver_order(e.order_id, DeliverOrderRequest(
                     deliverable_type=DeliverableType.TEXT,
-                    deliverable_text=json.dumps(sales_research.model_dump()),
+                    deliverable_text=deliver_text,
                 ))
                 logger.info(f"Order {e.order_id} delivered!")
             except Exception as err:
@@ -148,6 +158,59 @@ class AgentRunRequest(BaseModel):
 def validate_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def fetch_url_summary(url: str) -> str:
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            response = client.get(url)
+            response.raise_for_status()
+            text = response.text
+    except Exception:
+        return "Unable to fetch the URL content."
+
+    text = re.sub(r"<script[\s\S]*?<\/script>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<style[\s\S]*?<\/style>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:1800]
+
+
+def parse_json_from_text(text: str) -> Any:
+    if not isinstance(text, str):
+        return text
+
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    match = re.search(r"\{[\s\S]*\}", text)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except Exception:
+            pass
+
+    return text
+
+
+def normalize_sales_research_response(payload: Any) -> Any:
+    if payload is None:
+        return None
+    if isinstance(payload, dict):
+        return payload
+    if hasattr(payload, "model_dump"):
+        try:
+            return payload.model_dump()
+        except Exception:
+            pass
+    if isinstance(payload, str):
+        parsed = parse_json_from_text(payload)
+        return parsed
+    return payload
 
 
 @app.get("/")
@@ -263,15 +326,26 @@ async def run_agent_route(req: AgentRunRequest):
         if not validate_url(req.companyUrl) or not validate_url(req.linkedinUrl):
             raise HTTPException(status_code=400, detail="Both company and LinkedIn URLs must be valid URLs")
 
+        company_summary = fetch_url_summary(req.companyUrl)
+        prospect_summary = fetch_url_summary(req.linkedinUrl)
+
         prompt = (
+            "You are S.T.A.R., a sales research copilot for Big Boy Recruits. Generate a concise pre-call research brief from the company and prospect pages." 
             f"Company URL: {req.companyUrl}\n"
-            f"Prospect LinkedIn URL: {req.linkedinUrl}"
+            f"Company page summary: {company_summary}\n\n"
+            f"Prospect LinkedIn URL: {req.linkedinUrl}\n"
+            f"Prospect page summary: {prospect_summary}\n\n"
+            "Create a factual, sales-ready pre-call report now. Fill company_context, why_now, suggested_opening, key_talking_points, and watch_out_for with real insights from the page content. Do not ask if you can provide information; just deliver the report." 
         )
+
         result = await get_graph().ainvoke({"messages": [("user", prompt)]})
-        response = result.get("sales_research_response")
+        response = normalize_sales_research_response(result.get("sales_research_response"))
 
         if response is None:
             raise HTTPException(status_code=500, detail="No sales research response was generated")
+
+        if isinstance(response, str):
+            response = normalize_sales_research_response(response)
 
         report = map_sales_research_response_to_precall_report(response)
         return {

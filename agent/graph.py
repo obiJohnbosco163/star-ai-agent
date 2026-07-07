@@ -4,11 +4,8 @@ from pathlib import Path
 from typing import Any
 
 from langchain_groq import ChatGroq
-from langchain_core.messages import ToolMessage
-from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
-from .state import AgentState, SalesResearchResponse
-from .tools import research_company, research_prospect, generate_precall_report
+from .state import AgentState
 
 
 def load_env_file() -> None:
@@ -52,78 +49,33 @@ def build_graph():
     if not groq_api_key:
         raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file before running the agent.")
 
-    llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=groq_api_key, temperature=0.2)
-    research_tools = [research_company, research_prospect, generate_precall_report]
-    llm_with_tools = llm.bind_tools(research_tools)
+    llm = ChatGroq(
+        model="llama-3.1-8b-instant",
+        api_key=groq_api_key,
+        temperature=0.0,
+        max_tokens=400,
+        max_retries=0,
+    )
 
-    structured_prompt = ChatPromptTemplate.from_messages([
-        (
-            "system",
-            """You are a sales research assistant. Use the conversation and any tool results to produce a structured sales research summary.
-            Return the output as a JSON object matching the requested schema.
-            Focus on the prospect, company context, why now, a suggested opening, key talking points, and watch-outs.""",
-        ),
-        ("placeholder", "{messages}"),
-    ])
-    responder_chain = structured_prompt | llm.with_structured_output(SalesResearchResponse)
+    system_prompt = (
+        "You are S.T.A.R., the Sales Targeting & Readiness assistant. You turn a company URL and a prospect LinkedIn URL into a concise pre-call research brief. "
+        "Given the user message, return only valid JSON with these exact fields: prospect_name, company_name, who_you_are_talking_to, company_context, why_now, suggested_opening, key_talking_points, and watch_out_for. "
+        "Use the company and prospect page summaries in the user message to generate factual, sales-ready insights. "
+        "Do not ask follow-up questions or ask for approval. Do not add any text outside the JSON object. "
+        "If a field has no clear information, return a short explicit note rather than leaving it empty or blank. "
+        "Provide enough detail to fill a single-page pre-call brief, but keep the JSON concise and easy to read."
+    )
 
     def llm_node(state: AgentState):
-        response = llm_with_tools.invoke(state["messages"])
-        return {"messages": [response]}
-
-    def research_company_node(state: AgentState):
-        tool_call = state["messages"][-1].tool_calls[0]
-        result = _invoke_tool("research_company", tool_call.get("args", {}))
-        return {"messages": [ToolMessage(content=result, tool_call_id=tool_call["id"])]}
-
-    def research_prospect_node(state: AgentState):
-        tool_call = state["messages"][-1].tool_calls[0]
-        result = _invoke_tool("research_prospect", tool_call.get("args", {}))
-        return {"messages": [ToolMessage(content=result, tool_call_id=tool_call["id"])]}
-
-    def generate_report_node(state: AgentState):
-        tool_call = state["messages"][-1].tool_calls[0]
-        result = _invoke_tool("generate_precall_report", tool_call.get("args", {}))
-        return {"messages": [ToolMessage(content=result, tool_call_id=tool_call["id"])]}
-
-    def responder_node(state: AgentState):
-        structured = responder_chain.invoke({"messages": state["messages"]})
-        return {"sales_research_response": structured}
-
-    def route_after_llm(state: AgentState):
-        last_message = state["messages"][-1]
-        if getattr(last_message, "tool_calls", None):
-            tool_name = last_message.tool_calls[0]["name"]
-            if tool_name == "research_company":
-                return "research_company"
-            if tool_name == "research_prospect":
-                return "research_prospect"
-            if tool_name == "generate_precall_report":
-                return "generate_report"
-        return "responder"
+        messages = [("system", system_prompt)] + state["messages"]
+        response = llm.invoke(messages)
+        content = getattr(response, "content", response)
+        return {"sales_research_response": content}
 
     graph = StateGraph(AgentState)
     graph.add_node("llm", llm_node)
-    graph.add_node("research_company", research_company_node)
-    graph.add_node("research_prospect", research_prospect_node)
-    graph.add_node("generate_report", generate_report_node)
-    graph.add_node("responder", responder_node)
-
     graph.add_edge(START, "llm")
-    graph.add_conditional_edges(
-        "llm",
-        route_after_llm,
-        {
-            "research_company": "research_company",
-            "research_prospect": "research_prospect",
-            "generate_report": "generate_report",
-            "responder": "responder",
-        },
-    )
-    graph.add_edge("research_company", "llm")
-    graph.add_edge("research_prospect", "llm")
-    graph.add_edge("generate_report", "llm")
-    graph.add_edge("responder", END)
+    graph.add_edge("llm", END)
 
     return graph.compile()
 
