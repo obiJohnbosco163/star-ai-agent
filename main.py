@@ -171,6 +171,7 @@ def fetch_url_summary(url: str) -> str:
 
     text = re.sub(r"<script[\s\S]*?<\/script>", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"<style[\s\S]*?<\/style>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\/(?:h[1-6]|p|li|div|section|article|tr|td)>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     text = unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
@@ -330,26 +331,27 @@ async def run_agent_route(req: AgentRunRequest):
         prospect_summary = fetch_url_summary(req.linkedinUrl)
 
         prompt = (
-            "You are S.T.A.R., a sales research copilot for Big Boy Recruits. Generate a concise pre-call research brief from the company and prospect pages." 
+            "You are S.T.A.R., a sales research copilot for Big Boy Recruits. Generate a long, human-readable pre-call research briefing from the company and prospect pages. "
             f"Company URL: {req.companyUrl}\n"
             f"Company page summary: {company_summary}\n\n"
             f"Prospect LinkedIn URL: {req.linkedinUrl}\n"
             f"Prospect page summary: {prospect_summary}\n\n"
-            "Create a factual, sales-ready pre-call report now. Fill company_context, why_now, suggested_opening, key_talking_points, and watch_out_for with real insights from the page content. Do not ask if you can provide information; just deliver the report." 
+            "Write a detailed business briefing with clear headings for Prospect, Company Context, Why Now, Suggested Opening, Key Talking Points, and Watch Out For. "
+            "Include specific signals, page details, or role context from the URLs so the user can tell this was worth their time. "
+            "Make each section at least three sentences long, and do not return JSON or code formatting. Return plain-text only."
         )
 
         result = await get_graph().ainvoke({"messages": [("user", prompt)]})
-        response = normalize_sales_research_response(result.get("sales_research_response"))
+        response = result.get("sales_research_response")
+        if hasattr(response, "content"):
+            response = response.content
+        report_text = str(response).strip() if response is not None else ""
 
-        if response is None:
+        if not report_text:
             raise HTTPException(status_code=500, detail="No sales research response was generated")
 
-        if isinstance(response, str):
-            response = normalize_sales_research_response(response)
-
-        report = map_sales_research_response_to_precall_report(response)
         return {
-            "report": report,
+            "report": report_text,
             "companyUrl": req.companyUrl,
             "linkedinUrl": req.linkedinUrl,
         }

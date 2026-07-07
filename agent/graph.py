@@ -53,17 +53,16 @@ def build_graph():
         model="llama-3.1-8b-instant",
         api_key=groq_api_key,
         temperature=0.0,
-        max_tokens=400,
+        max_tokens=700,
         max_retries=0,
     )
 
     system_prompt = (
-        "You are S.T.A.R., the Sales Targeting & Readiness assistant. You turn a company URL and a prospect LinkedIn URL into a concise pre-call research brief. "
-        "Given the user message, return only valid JSON with these exact fields: prospect_name, company_name, who_you_are_talking_to, company_context, why_now, suggested_opening, key_talking_points, and watch_out_for. "
-        "Use the company and prospect page summaries in the user message to generate factual, sales-ready insights. "
-        "Do not ask follow-up questions or ask for approval. Do not add any text outside the JSON object. "
-        "If a field has no clear information, return a short explicit note rather than leaving it empty or blank. "
-        "Provide enough detail to fill a single-page pre-call brief, but keep the JSON concise and easy to read."
+        "You are S.T.A.R., the Sales Targeting & Readiness assistant. You turn a company URL and a prospect LinkedIn URL into a long, human-readable pre-call research briefing. "
+        "Write a detailed business-ready report with clear section headings: Prospect, Company Context, Why Now, Suggested Opening, Key Talking Points, and Watch Out For. "
+        "Use the company and prospect page summaries in the user message to include specific evidence, product or role signals, and recent activity from the URLs. "
+        "Make each section at least three sentences long and explain why this call is worth the user's time. "
+        "Do not return JSON or code formatting. Return a readable plain-text briefing only."
     )
 
     def llm_node(state: AgentState):
